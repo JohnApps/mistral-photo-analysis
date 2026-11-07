@@ -1,0 +1,23 @@
+[project]
+name = "photo-analysis"
+version = "0.1.0"
+description = "Local JPG photo analysis (EXIF, CLIP embeddings, zero-shot tags, BLIP2 captions) stored in DuckDB"
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=2.0",
+    "pillow>=10.4.0",
+    "torch>=2.6.0",
+    "transformers>=4.46.0",
+    "open-clip-torch>=2.29.0",
+    "tqdm>=4.66.0",
+]
+
+[project.scripts]
+photo-analysis = "photo_analysis.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["photo_analysis*"]

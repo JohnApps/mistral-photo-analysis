@@ -1,0 +1,12 @@
+mistral-photo-analysis\
+├── README.md
+├── requirements.txt
+├── pyproject.toml
+└── photo_analysis\
+    ├── __init__.py
+    ├── db.py
+    ├── scan.py
+    ├── embed.py
+    ├── tag.py
+    ├── caption.py
+    └── cli.py

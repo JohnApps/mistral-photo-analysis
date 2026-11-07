@@ -1,0 +1,13 @@
+Pillow
+caption
+common
+db
+duckdb
+embed
+numpy
+open_clip_torch
+scan
+tag
+torch
+tqdm
+transformers

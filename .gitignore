@@ -1,0 +1,5 @@
+*.env
+*.duckdb
+*.db
+*.wal
+set_env.cmd
