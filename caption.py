@@ -1,4 +1,6 @@
 # caption.py
+import time
+
 import torch
 from PIL import Image
 from tqdm import tqdm
@@ -61,6 +63,11 @@ if __name__ == "__main__":
         CAPTION_MODEL, torch_dtype=torch.float32
     )
     model.eval()
-    print(f"captioned {run(con, processor, model)} photos")
+    t0 = time.perf_counter()
+    n = run(con, processor, model)
+    secs = time.perf_counter() - t0
+    rate = f" ({n / secs:.1f} img/s)" if secs > 0 and n else ""
+    print(f"captioned {n} new photos; skipped already-captioned")
+    print(f"runtime[caption]: {secs:.1f}s for {n} photos{rate}")
     status(con)
     con.close()

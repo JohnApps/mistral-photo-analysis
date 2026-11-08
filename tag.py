@@ -1,6 +1,8 @@
 # tag.py
 # batch images
 #
+import time
+
 import open_clip
 import torch
 from PIL import Image
@@ -78,6 +80,11 @@ if __name__ == "__main__":
         text = tokenizer(CANDIDATE_TAGS)
         text_emb = model.encode_text(text)
         text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
-    print(f"tagged {run(con, model, preprocess, text_emb)} photos")
+    t0 = time.perf_counter()
+    n = run(con, model, preprocess, text_emb)
+    secs = time.perf_counter() - t0
+    rate = f" ({n / secs:.1f} img/s)" if secs > 0 and n else ""
+    print(f"tagged {n} new photos; skipped already-tagged")
+    print(f"runtime[tag]: {secs:.1f}s for {n} photos{rate}")
     status(con)
     con.close()

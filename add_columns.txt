@@ -1,0 +1,2 @@
+python -c "import duckdb; con=duckdb.connect('photos.duckdb'); con.execute('ALTER TABLE photos ADD COLUMN photo_date DATE'); con.execute('ALTER TABLE photos ADD COLUMN location VARCHAR'); con.execute('ALTER TABLE photos ADD COLUMN subject VARCHAR'); con.close()"
+python scan.py --backfill

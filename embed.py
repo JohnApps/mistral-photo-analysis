@@ -1,5 +1,7 @@
 # embed.py
 # Changed run to batch images
+import time
+
 import numpy as np
 import open_clip
 import torch
@@ -7,7 +9,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from common import (
-    connect, pending_photos, split_path, status,
+    connect, pending_photos, status,
     Updater, UPDATE_EMBED_SQL, UPDATE_ERROR_SQL,
 )
 
@@ -66,6 +68,11 @@ def run(con, model, preprocess) -> int:
 if __name__ == "__main__":
     con = connect()
     model, preprocess = load_model()
-    print(f"embedded {run(con, model, preprocess)} photos")
+    t0 = time.perf_counter()
+    n = run(con, model, preprocess)
+    secs = time.perf_counter() - t0
+    rate = f" ({n / secs:.1f} img/s)" if secs > 0 and n else ""
+    print(f"embedded {n} new photos; skipped already-embedded")
+    print(f"runtime[embed]: {secs:.1f}s for {n} photos{rate}")
     status(con)
     con.close()
