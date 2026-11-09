@@ -1,0 +1,18 @@
+set immediate_transaction_mode = false;
+SET preserve_insertion_order = false;
+set global max_memory = "24GB";
+set global memory_limit = "24GB";
+set temp_directory="H:\temp\duckdb";
+set global max_temp_directory_size = "512GB";
+set home_directory='H:\python';
+--set global access_mode=read_write;
+set global threads=16;
+set global worker_threads=16;
+--SET extension_directory = 'C:\Users\johna\.duckdb\extensions\';
+.timer on
+.changes on
+.highlight_colors error black
+.highlight_colors error black
+.highlight_colors keyword black bold
+.highlight_colors string_constant black
+.highlight off

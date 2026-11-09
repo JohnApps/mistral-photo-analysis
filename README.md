@@ -1,5 +1,3 @@
-
-
 Two additions then: (1) filename parsing — since your names carry YYYY-MM-DD-location-subject, I'll extract those into dedicated columns during scan; (2) runtime tracking in every script. The "only new photos" logic is already in place, and I'll make each program report new vs. skipped explicitly. Building and testing now.
 
 
@@ -43,4 +41,32 @@ python scan.py --backfill
 
 
 Now you can query by parsed names, e.g. all Woodpecker photos: SELECT full\_path FROM photos WHERE subject = 'Woodpecker', or everything from Tutsch in 2026: WHERE location = 'Tutsch' AND year(photo\_date) = 2026. Verified in the sandbox: parsing (including bad dates and non-matching names), idempotent rescan (0 new), embed re-run (0 processed), all on DuckDB 2.0.0.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Behavior of similar:
+
+
+
+python similar.py "O:\\Bilder\\1-D7100\\\_JDA9525.jpg" — works regardless of how the path is cased or slashed in the DB; prints the resolved stored path plus the top-N similar photos with captions
+
+python similar.py "d7100" — no exact match, so it lists up to 20 paths containing that text so you can pick one
+
+Unknown text → NOT IN TABLE with the hint to scan first
+
+Photo without embedding → NO EMBEDDING YET with the hint to run embed.py
+
+The target itself appears at the top with score 1.0000 — that's your confirmation the lookup worked
+
+One caveat: if the same filename exists in several folders, an exact full path is still required — but the fuzzy listing shows you the stored spellings to copy.
 

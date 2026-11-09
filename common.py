@@ -1,6 +1,6 @@
 # common.py
 # check for existing entries
-import re
+# no location etc.
 import time
 import warnings
 
@@ -21,9 +21,6 @@ CREATE TABLE IF NOT EXISTS photos (
     path          VARCHAR NOT NULL,
     filename      VARCHAR NOT NULL,
     full_path     VARCHAR NOT NULL,
-    photo_date    DATE,
-    location      VARCHAR,
-    subject       VARCHAR,
     file_size     BIGINT,
     mtime         TIMESTAMP,
     width         INTEGER,
@@ -41,19 +38,14 @@ CREATE TABLE IF NOT EXISTS photos (
 
 INSERT_SQL = """
 INSERT INTO photos (
-    path, filename, full_path, photo_date, location, subject,
-    file_size, mtime, width, height, exif, caption, caption_model,
+    path, filename, full_path, file_size, mtime,
+    width, height, exif, caption, caption_model,
     tags, embedding, embed_model, analyzed_at, error
 ) VALUES (
-    ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, to_json(?::JSON), ?, ?,
+    ?, ?, ?, ?, ?,
+    ?, ?, to_json(?::JSON), ?, ?,
     ?, ?, ?, now(), ?
 )
-"""
-
-UPDATE_META_SQL = """
-UPDATE photos SET photo_date = ?, location = ?, subject = ?
-WHERE full_path = ?
 """
 
 UPDATE_EMBED_SQL = """
@@ -76,44 +68,12 @@ UPDATE photos SET error = ?, analyzed_at = now()
 WHERE full_path = ?
 """
 
-# Filename pattern: 2026-11-01-Tutsch-Fall.jpg -> date, location, subject
-NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(.*)$")
-
-
-def parse_filename(filename: str):
-    """Extract (photo_date, location, subject) from a filename like
-    '2026-11-01-Tutsch-Fall.jpg'. Returns (None, None, None) if the
-    filename does not follow the pattern."""
-    stem = filename
-    for ext in (".jpeg", ".jpg"):
-        if stem.lower().endswith(ext):
-            stem = stem[: -len(ext)]
-            break
-    m = NAME_RE.match(stem)
-    if not m:
-        return None, None, None
-    date_str, rest = m.group(1), m.group(2)
-    try:
-        from datetime import date
-
-        photo_date = date.fromisoformat(date_str)
-    except ValueError:
-        return None, None, None
-    if "-" in rest:
-        location, subject = rest.split("-", 1)
-    else:
-        location, subject = rest, None
-    return photo_date, location or None, subject or None
-
 
 def _insert_params(row: dict) -> list:
     return [
         row.get("path"),
         row.get("filename"),
         row.get("full_path"),
-        row.get("photo_date"),
-        row.get("location"),
-        row.get("subject"),
         row.get("file_size"),
         row.get("mtime"),
         row.get("width"),
@@ -205,12 +165,11 @@ def status(con) -> None:
             count(embedding),
             count(tags),
             count(caption),
-            count(photo_date),
             count(*) FILTER (WHERE error IS NOT NULL AND error <> '')
         FROM photos
         """
     ).fetchone()
     print(
         f"total={row[0]} embedded={row[1]} tagged={row[2]} "
-        f"captioned={row[3]} dated={row[4]} errors={row[5]}"
+        f"captioned={row[3]} errors={row[4]}"
     )

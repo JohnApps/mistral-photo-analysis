@@ -11,3 +11,13 @@ SELECT path,tags
 FROM photos
 WHERE list_has_all(tags, ['bird', 'pet']);
 
+-- caption lookup
+select full_path from photos where caption ilike '%a woman%';
+
+-- do some fancy searching
+-- find photos similar to a known one, then eyeball the paths
+select full_path, caption, array_cosine_similarity(embedding,
+  (select embedding from photos where filename ilike '%JDA9525%')) as score
+from photos
+where embedding is not null
+order by score desc limit 30;
