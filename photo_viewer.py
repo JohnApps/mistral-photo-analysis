@@ -1,10 +1,14 @@
 # photo_viewer.py
 # V1
+# V2
 # photo_viewer.py
 # Tkinter viewer for the photo-analysis DuckDB database.
 # Layout: top = clickable full_path; left = search + folders;
 # center = selected photo; below it caption/date; bottom = thumbnail ribbon.
+# Thumbnails are cached on disk (.thumbcache) so revisiting a folder
+# causes almost no I/O to the photo disks.
 
+import hashlib
 import os
 import sys
 import tkinter as tk
@@ -18,8 +22,11 @@ Image.MAX_IMAGE_PIXELS = None
 DB_PATH = r"H:\mistral-photo-analysis\photos.duckdb"
 RIBBON_LIMIT = 500          # max thumbnails per folder/search
 THUMB_SIZE = 110            # thumbnail px
-FONT = ("Segoe UI", 11)
-FONT_SMALL = ("Segoe UI", 9)
+THUMB_CACHE = os.path.join(
+    os.path.dirname(os.path.abspath(DB_PATH)), ".thumbcache")
+FONT = ("Segoe UI", 13)
+FONT_SMALL = ("Segoe UI", 11)
+FONT_PATH = ("Segoe UI", 11, "underline")
 
 
 class PhotoApp(tk.Tk):
@@ -33,6 +40,8 @@ class PhotoApp(tk.Tk):
         self.current_photo = None      # selected photo row
         self.current_pil_image = None
         self.ribbon_images = []
+        self._folder_cache = None      # [(path, count), ...]
+        os.makedirs(THUMB_CACHE, exist_ok=True)
 
         self.setup_ui()
         self.load_folders()
@@ -47,8 +56,7 @@ class PhotoApp(tk.Tk):
         top.pack(side=tk.TOP, fill=tk.X, padx=8, pady=4)
         self.lbl_path = tk.Label(
             top, text="Select a photo...",
-            fg="blue", cursor="hand2",
-            font=("Segoe UI", 10, "underline"), anchor="w",
+            fg="blue", cursor="hand2", font=FONT_PATH, anchor="w",
         )
         self.lbl_path.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.lbl_path.bind("<Button-1>", self.open_in_viewer)
@@ -60,13 +68,13 @@ class PhotoApp(tk.Tk):
         main.pack(fill=tk.BOTH, expand=True)
 
         # LEFT SIDEBAR: search panel + folder list
-        left = ttk.Frame(main, width=320)
+        left = ttk.Frame(main, width=330)
         main.add(left, weight=1)
 
         ttk.Label(left, text="Search (path / caption / tag):",
                   font=FONT_SMALL).pack(anchor="w", padx=6, pady=(6, 0))
         self.search_var = tk.StringVar()
-        entry = ttk.Entry(left, textvariable=self.search_var)
+        entry = ttk.Entry(left, textvariable=self.search_var, font=FONT_SMALL)
         entry.pack(fill=tk.X, padx=6, pady=2)
         entry.bind("<Return>", lambda e: self.do_search())
         entry.bind("<Escape>", lambda e: self.clear_search())
@@ -86,33 +94,35 @@ class PhotoApp(tk.Tk):
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.folder_listbox = tk.Listbox(
             folder_frame, yscrollcommand=scroll.set,
-            exportselection=False, font=FONT_SMALL,
+            exportselection=False, font=("Segoe UI", 11),
         )
         scroll.config(command=self.folder_listbox.yview)
         self.folder_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.folder_listbox.bind("<<ListboxSelect>>", self.on_folder_select)
 
-        # RIGHT AREA: photo / info / ribbon stacked vertically
-        right = ttk.PanedWindow(main, orient=tk.VERTICAL)
+        # RIGHT AREA: photo (expands) / info (fixed) / ribbon (fixed height)
+        right = ttk.Frame(main)
         main.add(right, weight=4)
 
         self.main_canvas = tk.Canvas(right, bg="#1e1e1e", highlightthickness=0)
-        right.add(self.main_canvas, weight=5)
+        self.main_canvas.pack(fill=tk.BOTH, expand=True)
         self.main_canvas.bind("<Configure>", lambda e: self.draw_main_image())
 
         # INFO PANEL: caption + date taken
         info = ttk.LabelFrame(right, text="Caption / Date taken", padding=6)
-        right.add(info, weight=1)
+        info.pack(fill=tk.X, side=tk.BOTTOM, padx=6, pady=4)
         self.lbl_caption = ttk.Label(info, text="Caption: -", font=FONT,
                                      wraplength=900, justify=tk.LEFT)
         self.lbl_caption.pack(anchor="w")
         self.lbl_date = ttk.Label(info, text="Date taken: -", font=FONT)
         self.lbl_date.pack(anchor="w")
 
-        # RIBBON: scrollable thumbnails
-        bottom = ttk.Frame(right, height=150)
-        right.add(bottom, weight=1)
-        self.ribbon_canvas = tk.Canvas(bottom, bg="#2d2d2d", height=130,
+        # RIBBON: exactly as tall as the thumbnails - no dead space
+        bottom = ttk.Frame(right, height=THUMB_SIZE + 30)
+        bottom.pack(fill=tk.X, side=tk.BOTTOM, padx=6, pady=(0, 6))
+        bottom.pack_propagate(False)
+        self.ribbon_canvas = tk.Canvas(bottom, bg="#2d2d2d",
+                                       height=THUMB_SIZE + 20,
                                        highlightthickness=0)
         rscroll = ttk.Scrollbar(bottom, orient=tk.HORIZONTAL,
                                 command=self.ribbon_canvas.xview)
@@ -138,15 +148,16 @@ class PhotoApp(tk.Tk):
     # ------------------------------------------------------------------
     # DATA
     # ------------------------------------------------------------------
-    FOLDER_SQL = """
-        SELECT path, count(*) FROM photos
-        {where}
-        GROUP BY path ORDER BY path
-    """
+    def get_folders(self):
+        """Folder list cached in memory after the first query."""
+        if self._folder_cache is None:
+            self._folder_cache = self.conn.execute(
+                "SELECT path, count(*) FROM photos "
+                "GROUP BY path ORDER BY path").fetchall()
+        return self._folder_cache
 
-    def load_folders(self, where="", params=None):
-        rows = self.conn.execute(
-            self.FOLDER_SQL.format(where=where), params or []).fetchall()
+    def load_folders(self, filtered=None):
+        rows = filtered if filtered is not None else self.get_folders()
         self.folder_listbox.delete(0, tk.END)
         self.folder_data = {}
         for i, (folder, count) in enumerate(rows):
@@ -192,16 +203,48 @@ class PhotoApp(tk.Tk):
         self.lbl_folder_info.config(
             text=f"search '{term}': {len(rows)} photos (max {RIBBON_LIMIT})")
         self.populate_ribbon(rows)
-        # also narrow the folder list to folders containing matches
-        self.load_folders(where, params)
+        # narrow the cached folder list to folders containing matches
+        matched = self.conn.execute(
+            "SELECT DISTINCT path FROM photos " + where + " ORDER BY path",
+            params).fetchall()
+        counts = dict(self.get_folders())
+        self.load_folders([(m, counts[m]) for (m,) in matched if m in counts])
 
     def clear_search(self):
         self.search_var.set("")
         self.load_folders()
 
     # ------------------------------------------------------------------
-    # RIBBON / THUMBNAILS (async loading keeps UI responsive)
+    # THUMBNAILS: disk cache + async loading
     # ------------------------------------------------------------------
+    def _cache_file(self, full_path):
+        key = hashlib.md5(full_path.lower().encode("utf-8")).hexdigest()
+        return os.path.join(THUMB_CACHE, key + ".jpg")
+
+    def get_thumbnail(self, full_path):
+        """Return a PIL thumbnail, using the disk cache when possible."""
+        cache_path = self._cache_file(full_path)
+        try:
+            if os.path.exists(cache_path):
+                return Image.open(cache_path)
+        except Exception:
+            pass
+        if not os.path.exists(full_path):
+            return None
+        with Image.open(full_path) as img:
+            # draft mode: JPEG decoder scales down while reading - much less I/O
+            try:
+                img.draft("RGB", (THUMB_SIZE * 2, THUMB_SIZE * 2))
+            except Exception:
+                pass
+            img = img.convert("RGB")
+            img.thumbnail((THUMB_SIZE, THUMB_SIZE))
+            try:
+                img.save(cache_path, "JPEG", quality=80)
+            except Exception:
+                pass
+            return img
+
     def clear_ribbon(self):
         for w in self.ribbon_inner.winfo_children():
             w.destroy()
@@ -216,10 +259,9 @@ class PhotoApp(tk.Tk):
             return
         row = rows[i]
         try:
-            if os.path.exists(row[0]):
-                with Image.open(row[0]) as img:
-                    img.thumbnail((THUMB_SIZE, THUMB_SIZE))
-                    thumb = ImageTk.PhotoImage(img)
+            thumb_pil = self.get_thumbnail(row[0])
+            if thumb_pil is not None:
+                thumb = ImageTk.PhotoImage(thumb_pil)
                 self.ribbon_images.append(thumb)
                 btn = tk.Button(
                     self.ribbon_inner, image=thumb, relief="flat", bd=1,

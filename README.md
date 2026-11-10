@@ -82,6 +82,7 @@ Info pane (below main): caption (from BLIP2) and date taken (from EXIF DateTimeO
 Bottom ribbon: scrollable thumbnails (mouse wheel scrolls horizontally), loaded asynchronously 5 ms apart so the UI never freezes — same technique as your old script's V10
 
 
+
 Behavior:
 
 Clicking a folder loads its thumbnails (up to 500, RIBBON\_LIMIT)
@@ -91,4 +92,30 @@ The DB is opened read-only, so the viewer can run alongside the pipeline without
 Run it with:
 
 python photo\_viewer.py
+
+
+
+
+
+
+
+
+
+What changed:
+
+
+
+No more dead space — the right side now uses pack instead of a vertical PanedWindow: the main photo expands to take all leftover space, while the info panel and ribbon are fixed-height (pack\_propagate(False)), so the ribbon is exactly as tall as its thumbnails.
+
+Bigger fonts — caption/date: Segoe UI 13; folder list and sidebar: Segoe UI 11.
+
+I/O optimization — the big one. The repeated disk reads weren't the folder list (that's one aggregate query over the DB, no photo-disk I/O); they were the thumbnail decoding: every click on an O:\\bilder\\1-D7100 folder re-opened and re-decoded up to 500 full-size JPEGs from the USB3 disk. Now:
+
+On-disk thumbnail cache in H:\\mistral-photo-analysis\\.thumbcache — each photo is decoded once, the 110 px thumbnail saved as a small JPEG, and every later visit reads only the tiny cached file (measured: 20 ms → 0.4 ms per thumbnail, \~50× less work, and no more full-res reads from the O: disk at all after first view).
+
+JPEG draft() mode — the decoder downscales while reading, so even the first visit reads less data.
+
+In-memory folder cache — the folder list is queried once and reused; searches filter the cached list instead of re-aggregating.
+
+Note: the first time you open each folder it still reads the originals once (unavoidable — that's when the cache fills). After that, folder browsing is nearly instant. The cache grows to roughly 3–8 KB × 11,364 photos ≈ 50–90 MB — negligible, and you can delete .thumbcache anytime to rebuild it.
 
