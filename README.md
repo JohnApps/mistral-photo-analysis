@@ -70,3 +70,25 @@ The target itself appears at the top with score 1.0000 — that's your confirmat
 
 One caveat: if the same filename exists in several folders, an exact full path is still required — but the fuzzy listing shows you the stored spellings to copy.
 
+
+
+Photo Viewer
+Layout (matching your spec):
+
+Top bar: the full\_path of the selected photo — left-click opens it in the Windows default viewer (os.startfile, i.e. the Photos app), right-click copies it to the clipboard, and there's a Copy path button too
+Left sidebar: search panel + folder list (folder names with photo counts)
+Main pane: the selected photo, scaled to fit, redrawn on window resize
+Info pane (below main): caption (from BLIP2) and date taken (from EXIF DateTimeOriginal, falling back to file mtime)
+Bottom ribbon: scrollable thumbnails (mouse wheel scrolls horizontally), loaded asynchronously 5 ms apart so the UI never freezes — same technique as your old script's V10
+
+
+Behavior:
+
+Clicking a folder loads its thumbnails (up to 500, RIBBON\_LIMIT)
+Search (Enter or button) matches full\_path ILIKE, caption ILIKE (NULL captions are naturally excluded), and tags ILIKE (via array\_to\_string); the ribbon shows matches and the folder list narrows to folders containing them; Esc or Clear search resets
+Thumbnails of photos on unplugged disks are silently skipped (the os.path.exists check)
+The DB is opened read-only, so the viewer can run alongside the pipeline without lock conflicts
+Run it with:
+
+python photo\_viewer.py
+
