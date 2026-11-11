@@ -2,11 +2,13 @@
 # V1
 # V2
 # V3
+# V4
 # photo_viewer.py
 # Tkinter viewer for the photo-analysis DuckDB database.
 # Search syntax per field: terms separated by space = AND,
 # groups separated by '|' = OR. Fields are combined with AND.
-# Thumbnails are cached on disk (.thumbcache).
+# Thumbnails are cached on disk (.thumbcache), auto-trimmed at
+# startup to MAX_CACHE_MB by least-recently-used.
 
 import hashlib
 import os
@@ -24,9 +26,10 @@ RIBBON_LIMIT = 500          # max thumbnails per folder/search
 THUMB_SIZE = 110            # thumbnail px
 THUMB_CACHE = os.path.join(
     os.path.dirname(os.path.abspath(DB_PATH)), ".thumbcache")
-FONT = ("Segoe UI", 14)
-FONT_SMALL = ("Segoe UI", 12)
-FONT_PATH = ("Segoe UI", 12, "underline")
+MAX_CACHE_MB = 300          # keep .thumbcache under this size
+FONT = ("Segoe UI", 13)
+FONT_SMALL = ("Segoe UI", 11)
+FONT_PATH = ("Segoe UI", 11, "underline")
 
 
 def build_clause(expr, text):
@@ -62,6 +65,7 @@ class PhotoApp(tk.Tk):
         self.ribbon_images = []
         self._folder_cache = None      # [(path, count), ...]
         os.makedirs(THUMB_CACHE, exist_ok=True)
+        self.cleanup_cache()
 
         self.setup_ui()
         self.load_folders()
@@ -173,6 +177,39 @@ class PhotoApp(tk.Tk):
         if event.delta:
             self.ribbon_canvas.xview_scroll(
                 int(-event.delta / 120) * 3, "units")
+
+    # ------------------------------------------------------------------
+    # THUMBNAIL CACHE HOUSEKEEPING
+    # ------------------------------------------------------------------
+    def cleanup_cache(self):
+        """Startup housekeeping: if the thumbnail cache exceeds MAX_CACHE_MB,
+        delete the least-recently-used files until it is back under the limit."""
+        try:
+            files = []
+            total = 0
+            for name in os.listdir(THUMB_CACHE):
+                p = os.path.join(THUMB_CACHE, name)
+                if os.path.isfile(p):
+                    st = os.stat(p)
+                    files.append((st.st_atime, st.st_size, p))
+                    total += st.st_size
+            limit = MAX_CACHE_MB * 1024 * 1024
+            if total <= limit:
+                return
+            files.sort()               # oldest access time first
+            freed = 0
+            for _atime, size, path in files:
+                if total - freed <= limit:
+                    break
+                try:
+                    os.remove(path)
+                    freed += size
+                except OSError:
+                    pass
+            print(f"thumbcache cleanup: freed {freed / 1024 / 1024:.0f} MB "
+                  f"(limit {MAX_CACHE_MB} MB)")
+        except Exception as exc:
+            print(f"thumbcache cleanup skipped: {exc}")
 
     # ------------------------------------------------------------------
     # DATA

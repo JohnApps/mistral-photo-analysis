@@ -145,7 +145,7 @@ The search runs entirely in DuckDB against the database — no photo files are o
 
 
 
-You type Meaning 
+You type Meaning
 
 Path: tutsch 2025
 
@@ -176,4 +176,20 @@ Any empty field is ignored. Press Enter in any field to run, Esc or Clear search
 
 
 One caveat: | is a plain separator, not a full expression language — you can't write a | b AND c and expect the AND to distribute across the OR; each |-separated group is evaluated independently and OR'ed. If you ever need real boolean logic (parentheses, mixed precedence), tell me and I'll wire in a proper expression parser.
+
+
+
+
+
+**Changes in this version:**
+
+
+
+cleanup\_cache() runs at startup: if .thumbcache exceeds **MAX\_CACHE\_MB (default 300)**, it deletes least-recently-viewed thumbnails until under the limit, and prints how much it freed. At your scale (\~11k photos ≈ 50–90 MB) it will normally do nothing at all.
+Everything else is unchanged: three-field search (space = AND, | = OR, fields ANDed), cached folder list, async ribbons, no dead space, bigger fonts, clickable/copyable path.
+
+
+The cleanup logic was tested standalone: a 3 MB cache under a 1 MB limit correctly shrank from 10 to 3 files, removing the oldest-accessed ones first. Note that LRU relies on Windows file access times, which NTFS updates on read — if you've disabled NtfsDisableLastAccessUpdate via system tuning, the fallback behavior is oldest-modified-first, which is equally safe.
+
+That completes the viewer. Enjoy browsing your collection — and if you later want extras (duplicate detection, slideshow mode, export of search results to CSV), just ask.
 
