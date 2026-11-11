@@ -4,7 +4,7 @@ Two additions then: (1) filename parsing — since your names carry YYYY-MM-DD-l
 
 
 
-Ran a command
+**Ran a command**
 
 Fixing a bug I introduced in scan.py's \_\_main\_\_ (it would have run the scan twice), then finishing the other scripts.
 
@@ -12,7 +12,7 @@ Fixing a bug I introduced in scan.py's \_\_main\_\_ (it would have run the scan 
 
 
 
-Ran 2 commands
+**Ran 2 commands**
 
 All built and verified on DuckDB 2.0.0. What's new:
 
@@ -48,13 +48,7 @@ Now you can query by parsed names, e.g. all Woodpecker photos: SELECT full\_path
 
 
 
-
-
-
-
-
-
-Behavior of similar:
+**Behavior of similar:**
 
 
 
@@ -72,7 +66,9 @@ One caveat: if the same filename exists in several folders, an exact full path i
 
 
 
-Photo Viewer
+
+
+**Photo Viewer**
 Layout (matching your spec):
 
 Top bar: the full\_path of the selected photo — left-click opens it in the Windows default viewer (os.startfile, i.e. the Photos app), right-click copies it to the clipboard, and there's a Copy path button too
@@ -83,7 +79,7 @@ Bottom ribbon: scrollable thumbnails (mouse wheel scrolls horizontally), loaded 
 
 
 
-Behavior:
+**Behavior**:
 
 Clicking a folder loads its thumbnails (up to 500, RIBBON\_LIMIT)
 Search (Enter or button) matches full\_path ILIKE, caption ILIKE (NULL captions are naturally excluded), and tags ILIKE (via array\_to\_string); the ribbon shows matches and the folder list narrows to folders containing them; Esc or Clear search resets
@@ -97,11 +93,7 @@ python photo\_viewer.py
 
 
 
-
-
-
-
-What changed:
+**What changed:**
 
 
 
@@ -120,17 +112,20 @@ In-memory folder cache — the folder list is queried once and reused; searches 
 Note: the first time you open each folder it still reads the originals once (unavoidable — that's when the cache fills). After that, folder browsing is nearly instant. The cache grows to roughly 3–8 KB × 11,364 photos ≈ 50–90 MB — negligible, and you can delete .thumbcache anytime to rebuild it.
 
 
+
 Three conditions, joined with OR, so a photo matches if any one of them is true:
 
-full_path ILIKE ? — case-insensitive match anywhere in the complete path, e.g. O:\Bilder\1-D7100\2022-04-23-Canobio\_JDA9525.jpg. This covers folder names and filenames, so %tutsch% finds photos in a ...-Tutsch folder, and %JDA9525% finds that Nikon filename wherever it lives.
+full\_path ILIKE ? — case-insensitive match anywhere in the complete path, e.g. O:\\Bilder\\1-D7100\\2022-04-23-Canobio\_JDA9525.jpg. This covers folder names and filenames, so %tutsch% finds photos in a ...-Tutsch folder, and %JDA9525% finds that Nikon filename wherever it lives.
 
 caption ILIKE ? — matches the BLIP2-generated text description. Since NULL captions never satisfy ILIKE, photos without captions are simply skipped by this condition (they can still match via path or tags). So bird finds a photo captioned "a bird sitting on a branch" even if "bird" appears nowhere in its filename.
 
-array_to_string(tags, ' ') ILIKE ? — the tags column is a list (['bird', 'animal']), which can't be compared directly with ILIKE. array_to_string flattens it to a single string ('bird animal'), which is then matched. So animal finds every photo tagged animal.
+array\_to\_string(tags, ' ') ILIKE ? — the tags column is a list (\['bird', 'animal']), which can't be compared directly with ILIKE. array\_to\_string flattens it to a single string ('bird animal'), which is then matched. So animal finds every photo tagged animal.
 
 What happens with the results:
 
-The matching photos (up to RIBBON_LIMIT = 500) go into the bottom thumbnail ribbon — you click a thumbnail to view it in the main pane with its caption and date.
+
+
+The matching photos (up to RIBBON\_LIMIT = 500) go into the bottom thumbnail ribbon — you click a thumbnail to view it in the main pane with its caption and date.
 The left folder list narrows to only the folders containing matches, keeping each folder's total photo count — so you can see where the hits live and click into a folder for its remaining photos.
 The label above the folder list shows how many photos matched (and warns if you hit the 500 cap, in which case a more specific term will help).
 Resetting: press Esc in the search box or click Clear search — the folder list returns to all folders and the ribbon keeps showing the last results until you click a folder.
@@ -139,3 +134,46 @@ Two things to keep in mind:
 
 It's an OR search, not AND — there's no way to combine terms (e.g. "tutsch AND bird") in the current version. If you want that, I can extend it with support for multiple words (all must match) or explicit field prefixes like caption:bird.
 The search runs entirely in DuckDB against the database — no photo files are opened. Disk I/O only starts afterwards, when the ribbon loads thumbnails (from the cache if you've viewed them before).
+
+
+
+
+
+
+
+**Search syntax (labelled in the sidebar):**
+
+
+
+You type Meaning 
+
+Path: tutsch 2025
+
+full\_path ILIKE '%tutsch%' AND full\_path ILIKE '%2025%' → your 1408 rows
+
+Caption: woman baby
+
+both words must appear in the caption → your 22 rows
+
+Caption: woman|baby
+
+either word appears (OR)
+
+Caption: woman|dog baby
+
+(woman OR dog) AND baby — OR binds tighter than space-AND within a group
+
+Path: tutsch and Caption: woman
+
+both fields must match (fields are ANDed)
+
+Tags: bird
+
+matches the tag list (flattened to a string)
+
+Any empty field is ignored. Press Enter in any field to run, Esc or Clear search to reset. The logic is unit-tested against DuckDB 2.0.0 (AND within field, OR via |, cross-field AND, tag matching).
+
+
+
+One caveat: | is a plain separator, not a full expression language — you can't write a | b AND c and expect the AND to distribute across the OR; each |-separated group is evaluated independently and OR'ed. If you ever need real boolean logic (parentheses, mixed precedence), tell me and I'll wire in a proper expression parser.
+

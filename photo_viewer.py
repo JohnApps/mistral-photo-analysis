@@ -1,12 +1,12 @@
 # photo_viewer.py
 # V1
 # V2
+# V3
 # photo_viewer.py
 # Tkinter viewer for the photo-analysis DuckDB database.
-# Layout: top = clickable full_path; left = search + folders;
-# center = selected photo; below it caption/date; bottom = thumbnail ribbon.
-# Thumbnails are cached on disk (.thumbcache) so revisiting a folder
-# causes almost no I/O to the photo disks.
+# Search syntax per field: terms separated by space = AND,
+# groups separated by '|' = OR. Fields are combined with AND.
+# Thumbnails are cached on disk (.thumbcache).
 
 import hashlib
 import os
@@ -24,9 +24,29 @@ RIBBON_LIMIT = 500          # max thumbnails per folder/search
 THUMB_SIZE = 110            # thumbnail px
 THUMB_CACHE = os.path.join(
     os.path.dirname(os.path.abspath(DB_PATH)), ".thumbcache")
-FONT = ("Segoe UI", 13)
-FONT_SMALL = ("Segoe UI", 11)
-FONT_PATH = ("Segoe UI", 11, "underline")
+FONT = ("Segoe UI", 14)
+FONT_SMALL = ("Segoe UI", 12)
+FONT_PATH = ("Segoe UI", 12, "underline")
+
+
+def build_clause(expr, text):
+    """'a b|c' -> ((expr ILIKE %a% AND expr ILIKE %b%) OR (expr ILIKE %c%)).
+    Space = AND within a group; '|' = OR between groups.
+    Returns (sql, params) or (None, []) if the text is empty."""
+    text = text.strip()
+    if not text:
+        return None, []
+    or_groups, params = [], []
+    for group in text.split("|"):
+        terms = [t for t in group.split() if t]
+        if not terms:
+            continue
+        conds = " AND ".join(f"({expr} ILIKE ?)" for t in terms)
+        params.extend(f"%{t}%" for t in terms)
+        or_groups.append(f"({conds})")
+    if not or_groups:
+        return None, []
+    return "(" + " OR ".join(or_groups) + ")", params
 
 
 class PhotoApp(tk.Tk):
@@ -71,15 +91,24 @@ class PhotoApp(tk.Tk):
         left = ttk.Frame(main, width=330)
         main.add(left, weight=1)
 
-        ttk.Label(left, text="Search (path / caption / tag):",
+        ttk.Label(left, text="Search  (space = AND, | = OR):",
                   font=FONT_SMALL).pack(anchor="w", padx=6, pady=(6, 0))
-        self.search_var = tk.StringVar()
-        entry = ttk.Entry(left, textvariable=self.search_var, font=FONT_SMALL)
-        entry.pack(fill=tk.X, padx=6, pady=2)
-        entry.bind("<Return>", lambda e: self.do_search())
-        entry.bind("<Escape>", lambda e: self.clear_search())
+
+        self.search_vars = {}
+        for field, label in (("path", "Path:"),
+                             ("caption", "Caption:"),
+                             ("tags", "Tags:")):
+            ttk.Label(left, text=label, font=FONT_SMALL).pack(
+                anchor="w", padx=6, pady=(4, 0))
+            var = tk.StringVar()
+            self.search_vars[field] = var
+            entry = ttk.Entry(left, textvariable=var, font=FONT_SMALL)
+            entry.pack(fill=tk.X, padx=6, pady=1)
+            entry.bind("<Return>", lambda e: self.do_search())
+            entry.bind("<Escape>", lambda e: self.clear_search())
+
         ttk.Button(left, text="Search", command=self.do_search).pack(
-            fill=tk.X, padx=6, pady=2)
+            fill=tk.X, padx=6, pady=4)
         ttk.Button(left, text="Clear search", command=self.clear_search).pack(
             fill=tk.X, padx=6, pady=(0, 4))
 
@@ -182,36 +211,47 @@ class PhotoApp(tk.Tk):
         self.lbl_folder_info.config(text=f"{len(rows)} photos in {folder}")
         self.populate_ribbon(rows)
 
+    def build_where(self):
+        """Combine the three search fields with AND.
+        Inside each field: space = AND, '|' = OR."""
+        clauses, params, desc = [], [], []
+        for field, expr in (("path", "full_path"),
+                            ("caption", "caption"),
+                            ("tags", "array_to_string(tags, ' ')")):
+            sql, p = build_clause(expr, self.search_vars[field].get())
+            if sql:
+                clauses.append(sql)
+                params.extend(p)
+                desc.append(f"{field}='{self.search_vars[field].get().strip()}'")
+        if not clauses:
+            return None, [], ""
+        return " AND ".join(clauses), params, "  ".join(desc)
+
     def do_search(self):
-        term = self.search_var.get().strip()
-        if not term:
+        where, params, desc = self.build_where()
+        if not where:
             return
-        pat = f"%{term}%"
-        where = """
-            WHERE full_path ILIKE ?
-               OR caption ILIKE ?
-               OR array_to_string(tags, ' ') ILIKE ?
-        """
-        params = [pat, pat, pat]
         rows = self.conn.execute(
             """
             SELECT full_path, caption, tags, exif, mtime, width, height
-            FROM photos """ + where + """ ORDER BY full_path LIMIT ?
+            FROM photos WHERE """ + where + """
+            ORDER BY full_path LIMIT ?
             """,
             params + [RIBBON_LIMIT],
         ).fetchall()
         self.lbl_folder_info.config(
-            text=f"search '{term}': {len(rows)} photos (max {RIBBON_LIMIT})")
+            text=f"search {desc}: {len(rows)} photos (max {RIBBON_LIMIT})")
         self.populate_ribbon(rows)
         # narrow the cached folder list to folders containing matches
         matched = self.conn.execute(
-            "SELECT DISTINCT path FROM photos " + where + " ORDER BY path",
+            "SELECT DISTINCT path FROM photos WHERE " + where + " ORDER BY path",
             params).fetchall()
         counts = dict(self.get_folders())
         self.load_folders([(m, counts[m]) for (m,) in matched if m in counts])
 
     def clear_search(self):
-        self.search_var.set("")
+        for var in self.search_vars.values():
+            var.set("")
         self.load_folders()
 
     # ------------------------------------------------------------------
@@ -232,7 +272,6 @@ class PhotoApp(tk.Tk):
         if not os.path.exists(full_path):
             return None
         with Image.open(full_path) as img:
-            # draft mode: JPEG decoder scales down while reading - much less I/O
             try:
                 img.draft("RGB", (THUMB_SIZE * 2, THUMB_SIZE * 2))
             except Exception:
